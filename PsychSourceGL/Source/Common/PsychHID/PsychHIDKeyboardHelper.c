@@ -35,7 +35,6 @@
 static int listenchar_enabled = 0;
 static int stdinpipe[2] = {-1, -1};
 static FILE* stdininject = NULL;
-static char ptyname[FILENAME_MAX];
 
 #if PSYCH_SYSTEM == PSYCH_LINUX
 #include <errno.h>
@@ -115,7 +114,7 @@ int _kbhit(void) {
             term.c_lflag &= ~ECHO;
             tcsetattr(fileno(stdin), TCSANOW, &term);
 
-#if (PSYCH_SYSTEM == PSYCH_LINUX) && defined(PTBOCTAVE3MEX)
+#if (PSYCH_SYSTEM == PSYCH_LINUX) && defined(PTBOCTAVE3MEX) && (PSYCH_LANGUAGE == PSYCH_MATLAB)
             // Linux with Octave: We can't use a pty or unix pipe(), as
             // Octave would terminate if we tried to detach from a pty or
             // pipe while it is in interactive mode, waiting for input.
@@ -136,7 +135,7 @@ int _kbhit(void) {
             // no characters echo'ed by terminal itself.
 
 #else
-            // OSX, or Linux with Matlab:
+            // OSX, or Linux with Matlab or Python instead of Octave:
             //
             // On OSX with Octave, we must use a pipe(), again because of
             // the readline library: When going to interactive mode, readline()
@@ -174,13 +173,10 @@ int _kbhit(void) {
                 fflush(stdout);
             }
 #else
-            if (0 != openpty(&stdinpipe[1], &stdinpipe[0], ptyname, &oldterm, NULL)) {
+            if (0 != openpty(&stdinpipe[1], &stdinpipe[0], NULL, &oldterm, NULL)) {
                 printf("PsychHID-WARNING: openpty() for pseudo-tty failed! [%s]. Falling back to Unix pipe().\n", strerror(errno));
                 if (0 != pipe(stdinpipe)) printf("PsychHID-WARNING: Unix pipe() creation failed [%s]. This may end badly!\n", strerror(errno));
                 fflush(stdout);
-            }
-            else {
-                // printf("PsychHID-INFO: Using pty %s.\n", ptyname);
             }
 #endif
 
@@ -262,12 +258,12 @@ int _kbhit(void) {
 
         // New opmode established:
         current_mode = listenchar_enabled;
-        }
+    }
 
     // Query number of pending characters in stdin stream:
     ioctl(fileno(stdin), FIONREAD, &bytesWaiting);
     return(bytesWaiting);
-        }
+}
 
 #else
 // _kbhit() is part of MS-Windows CRT standard runtime library. We just
@@ -294,8 +290,6 @@ void ConsoleInputHelper(int ccode)
             fflush(stdininject);
         }
 
-        // if (ccode == 3) printf("PsychHID-INFO: Inline x-mit of code 3 [ctrl+c] suppressed.\n");
-
         // Done.
         return;
     }
@@ -303,8 +297,8 @@ void ConsoleInputHelper(int ccode)
     // Negatice ccode -- A command code:
     switch (ccode) {
     case  -1:   // KeyboardQueue-Thread reports detection of CTRL+C interrupt keys:
-        // We are on the kbqueue thread, not the main interpreter thread.
-        printf("\nPsychHID-INFO: CTRL+C DETECTED! Trying to reenable keyboard input to console. [%p]\n\n", stdininject);
+        // We are on the kbqueue thread, not the main interpreter thread, so printf
+        // would be dangerous, at least on recent Matlab versions.
 
         // If console based ListenChar() is enabled at all, ie., ListenChar(1)
         // or ListenChar(2) are active by use of the KeyboardQueue thread,

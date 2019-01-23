@@ -4,8 +4,9 @@ function PsychtoolboxPostInstallRoutine(isUpdate, flavor)
 % Psychtoolbox post installation routine. You should not call this
 % function directly! This routine is called by DownloadPsychtoolbox,
 % or UpdatePsychtoolbox after a successfull download/update of
-% Psychtoolbox. The routine performs tasks that are common to
-% downloads and updates, so they can share their code/implementation.
+% Psychtoolbox, or by SetupPsychtoolbox after an in-place installtion.
+% The routine performs tasks that are common to downloads and updates,
+% so they can share their code/implementation.
 %
 % As PsychtoolboxPostInstallRoutine itself is downloaded or updated,
 % it can contain code specific to each Psychtoolbox revision/release
@@ -15,12 +16,11 @@ function PsychtoolboxPostInstallRoutine(isUpdate, flavor)
 % Currently the routine performs the following tasks:
 %
 % 1. Clean up the Matlab/Octave path to Psychtoolbox: Remove unneeded .svn subfolders.
-% 2. Contact the Psychtoolbox server to perform online registration of this
-%    working copy of Psychtoolbox.
-% 3. Add the PsychJava subfolder to the static Matlab class-path if neccessary.
+% 2. Add the PsychJava subfolder to the static Matlab class-path if neccessary.
 %    This enables the Java-based GetChar support on Matlab.
-% 4. Add the PsychStartup.m routine to Matlab's startup.m file on Windows.
-% 5. Perform post-installation checks and basic troubleshooting.
+% 3. Add the PsychStartup.m routine to Matlab's and Octave's startup.m file on Windows.
+% 4. Set the proper pathes to Psychtoolbox and its mex files.
+% 4. Perform post-installation checks, configuration and basic troubleshooting.
 
 %
 % History:
@@ -72,6 +72,7 @@ function PsychtoolboxPostInstallRoutine(isUpdate, flavor)
 % 12/26/2016 No support for OSX 10.10 anymore. No support for Octave-4.0 on non-Linux,
 %            support 64-Bit Octave 4.2 on Windows and OSX instead. (MK)
 % 01/03/2017 Fix Matlab incompatibility with __octave_config_info__. (MK)
+% 04/07/2018 Remove PsychtoolboxRegistration for now. (MK)
 
 fprintf('\n\nRunning post-install routine...\n\n');
 
@@ -166,13 +167,13 @@ if (IsOSX || IsWin) && ~Is64Bit
     fprintf('an old legacy copy of Psychtoolbox-3.0.9, which did support 32-Bit Octave 3.2 on OSX, or use\n');
     fprintf('DownloadPsychtoolbox() with flavor ''Psychtoolbox-3.0.10'', which does support 32-Bit Matlab on OSX.\n');
     fprintf('DownloadPsychtoolbox() with flavor ''Psychtoolbox-3.0.12'', does support 32-Bit Octave-4 on Windows.\n');
-    error('Tried to setup on 32-Bit Octave, which is no longer supported on OSX or Windows.');
+    error('Tried to setup on 32-Bit Octave or Matlab, which is no longer supported on OSX or Windows.');
 end
 
 if IsLinux && ~Is64Bit && IsOctave && ~IsARM
-    fprintf('Psychtoolbox 3.0.13 no longer provides up to date mex files for 32-Bit Octave on Linux.\n');
+    fprintf('Psychtoolbox 3.0.15 no longer provides mex files for 32-Bit Octave for Intel on Linux.\n');
     fprintf('The only exception is 32-Bit Octave for Linux on ARM processors like the RaspberryPi.\n');
-    fprintf('Not to worry though, you can get a fully supported Psychtoolbox 3.0.13 for 32-Bit Octave\n');
+    fprintf('Not to worry though, you can get a supported Psychtoolbox 3.0.15 for 32-Bit Octave\n');
     fprintf('on Linux from the NeuroDebian project if you run Debian GNU/Linux or a Ubuntu flavor.\n');
     fprintf('Go to this link for installation instructions:\n');
     fprintf('http://neuro.debian.net/pkgs/octave-psychtoolbox-3.html#pkg-octave-psychtoolbox-3\n\n');
@@ -261,7 +262,7 @@ if IsOSX
         fprintf('You could download an older version of Psychtoolbox\n');
         fprintf('onto your system to get better results. See our Wiki for help.\n');
         fprintf('Better though, update your operating system to at least version\n');
-        fprintf('10.11.5 or later, better the very latest OSX version.\n');
+        fprintf('10.11.5 or later.\n');
         fprintf('\n\n\n==== WARNING WARNING WARNING WARNING ====\n\n\n');
         fprintf('Press any key on keyboard to try to continue with setup, although\n');
         fprintf('this will likely fail soon and leave you with a dysfunctional toolbox.\n\n');
@@ -337,9 +338,10 @@ if IsOctave
         end
 
         % Encode prefix and Octave major version of proper folder:
-        octavev = sscanf(version, '%i.%i');
+        octavev = sscanf(version, '%i.%i.%i');
         octavemajorv = octavev(1);
         octaveminorv = octavev(2);
+        octavepatchv = octavev(3);
 
         fprintf('Octave major version %i detected. Will prepend the following folder to your Octave path:\n', octavemajorv);
 
@@ -393,15 +395,16 @@ if IsOctave
         fprintf('=====================================================================\n\n');
     end
 
-    if (~IsLinux && (octavemajorv ~= 4 || octaveminorv ~= 2)) || (octavemajorv < 3) || (octavemajorv == 3 && octaveminorv < 8)
+    if (~IsLinux && (octavemajorv ~= 4 || octaveminorv ~= 4 || octavepatchv ~= 1)) || ...
+        (IsLinux && ((octavemajorv < 3) || (octavemajorv == 3 && octaveminorv < 8)))
         fprintf('\n\n=================================================================================\n');
         fprintf('WARNING: Your version %s of Octave is incompatible with this release. We strongly recommend\n', version);
         if IsLinux
             % On Linux everything >= 3.8 is fine:
-            fprintf('WARNING: using the latest stable version of the Octave 3.8 or 4.0 series for use with Psychtoolbox.\n');
+            fprintf('WARNING: using the latest stable version of the Octave 3.8, 4.0 or 4.2 series for use with Psychtoolbox.\n');
         else
-            % On Windows/OSX we only care about 4.2 atm:
-            fprintf('WARNING: using the latest stable version of the Octave 4.2.x series for use with Psychtoolbox.\n');
+            % On Windows/OSX we only care about 4.4.1 atm:
+            fprintf('WARNING: using the latest Octave 4.4.1 series for use with Psychtoolbox.\n');
         end
         fprintf('WARNING: Stuff may not work at all or only suboptimal with other versions and we\n');
         fprintf('WARNING: don''t provide any support for such old versions.\n');
@@ -414,14 +417,14 @@ if IsOctave
         % Need to copy the Octave runtime libraries somewhere our mex files can find them. The only low-maintenance
         % way of dealing with this mess of custom library pathes per octave version, revision and packaging format.
         % Preferred location is the folder with our mex files - found by rpath = @loader_path
-        if ~copyfile([GetOctlibDir filesep 'liboctinterp.4.dylib'], [rdir filesep], 'f') || ...
-           ~copyfile([GetOctlibDir filesep 'liboctave.4.dylib'], [rdir filesep], 'f')
+        if ~copyfile([GetOctlibDir filesep 'liboctinterp.6.dylib'], [rdir filesep], 'f') || ...
+           ~copyfile([GetOctlibDir filesep 'liboctave.6.dylib'], [rdir filesep], 'f')
             % Copy into our mex files folder failed. A second location where the linker will search is the
             % $HOME/lib directory of the current user, so try that as target location:
             tdir = PsychHomeDir('lib');
             fprintf('\n\nFailed to copy Octave runtime libraries to mex file folder [%s].\nRetrying in users private lib dir: %s ...\n', rdir, tdir);
-            if ~copyfile([GetOctlibDir filesep 'liboctinterp.4.dylib'], tdir, 'f') || ...
-               ~copyfile([GetOctlibDir filesep 'liboctave.4.dylib'], tdir, 'f')
+            if ~copyfile([GetOctlibDir filesep 'liboctinterp.6.dylib'], tdir, 'f') || ...
+               ~copyfile([GetOctlibDir filesep 'liboctave.6.dylib'], tdir, 'f')
                 fprintf('\nFailed to copy runtime libs to [%s] as well :(.\n', tdir);
                 fprintf('Our mex files will likely not work this way. Maybe the directories lack file write permissions?\n');
                 fprintf('\n\n\nA last workaround would be to restart octave from a terminal via this line:\n\nexport DYLD_LIBRARY_PATH=%s ; octave\n\n\n', GetOctlibDir);
@@ -537,7 +540,7 @@ if IsWin && ~IsOctave
         end
         fprintf('ERROR: You must execute that installer as an administrator user. Exit Matlab before the installation, then restart it.\n');
         fprintf('ERROR: After fixing the problem, restart this installation/update routine.\n\n');
-        fprintf('ERROR: You can also just do a: cd(PsychtoolboxRoot); SetupPsychtoolbox; PsychtoolboxRegistration(%i, ''%s'');\n\n', isUpdate, flavor);
+        fprintf('ERROR: You can also just do a: cd(PsychtoolboxRoot); SetupPsychtoolbox;\n\n');
         fprintf('ERROR: This will avoid a full download of Psychtoolbox over the internet and just finish the setup.\n');
         
         fprintf('\n\nInstallation aborted. Fix the reported problem and retry.\n\n');
@@ -581,6 +584,9 @@ try
         fprintf('For PsychHID() support:\n\n');
         fprintf('* libusb-1.0 USB low-level access library.\n');
         fprintf('\n\n');
+        fprintf('For PsychPortAudio() support:\n\n');
+        fprintf('* libportaudio.so.2 Portaudio sound library.\n');
+        fprintf('\n\n');
         fprintf('For Eyelink():\n\n');
         fprintf('* The Eyelink core libraries from the SR-Research download website.\n');
         fprintf('\n');
@@ -606,7 +612,7 @@ try
             fprintf('\n');
             fprintf('If you run PTB on the Nexus7 make sure you do not use the "Unity" desktop since\n');
             fprintf('this might lead to unforeseen problems. Use a desktop without 3D desktop compositor instead.\n');
-            fprintf('E.g. install and use XFCE (sudo apt-get install xfce4).\n');            
+            fprintf('E.g. install and use XFCE (sudo apt-get install xfce4).\n');
         end
     end
 
@@ -621,27 +627,25 @@ try
         PsychGPUControl('FullScreenWindowDisablesCompositor', 1);
     end
 
-    % Try to execute online registration routine: This should be fail-safe in case
-    % of no network connection.
-    fprintf('\n\n');
-    PsychtoolboxRegistration(isUpdate, flavor);
-    fprintf('\n\n\n');
-
     % Tell user we're successfully done:
     fprintf('\nDone with post-installation. Psychtoolbox is ready for use.\n\n\n');
-
 catch
     fprintf('\n\n');
-    fprintf('Screen() or online registration failed to work for some reason:\n\n');
+    fprintf('Screen() failed to work for some reason:\n\n');
     fprintf('Check the troubleshooting instructions on our Wiki (Download section \n');
     fprintf('and FAQ section, maybe also the Bugs section).\n\n');
+    if IsWin && IsOctave
+        fprintf('You may need to delete (or rename) the following DLL files in your Octave-4.4.1 installations\n');
+        fprintf('bin folder to make this work, then restart Octave:\n');
+        fprintf('C:\\Octave\\4.4.1\\bin\\libglib-2.0.0.dll\n');
+        fprintf('C:\\Octave\\4.4.1\\bin\\libgmodule-2.0.0.dll\n');
+        fprintf('C:\\Octave\\4.4.1\\bin\\opengl32.dll\n');
+        fprintf('\n');
+    end
     fprintf('Once you manage to fix the problem (simply type ''AssertOpenGL'' to verify\n');
     fprintf('that stuff works now), you do not need to run the installation routine again,\n');
     fprintf('but can start working immediately.\n\n');
-    fprintf('However, we kindly ask you to execute the following command after everything works,\n');
-    fprintf('so your copy gets registered by us for statistical purpose:\n\n');
-    fprintf('PsychtoolboxRegistration(%i, ''%s'');\n\n', isUpdate, flavor);
-    fprintf('Thanks! Press RETURN or ENTER to confirm you read and understood the above message.\n');
+    fprintf('Press RETURN or ENTER to confirm you read and understood the above message.\n');
     pause;
     fprintf('\n\n');
 end
@@ -691,10 +695,11 @@ fprintf('source code, please type "help UseTheSource" for specific download inst
 fprintf('BEGINNERS READ THIS:\n');
 fprintf('--------------------\n\n');
 fprintf('If you are new to the Psychtoolbox, you might try this: \nhelp Psychtoolbox\n\n');
-fprintf('Psychtoolbox website:\n');
+fprintf('Psychtoolbox website, which also links to a tutorial for basic use cases:\n');
 fprintf('web http://www.psychtoolbox.org -browser\n');
 fprintf('\n');
-fprintf('Please make sure that you have a look at the PDF file Psychtoolbox3-Slides.pdf\n');
+fprintf('Please make sure that you have a look at the detailed ECVP 2013 tutorial slides\n');
+fprintf('in the PDF file PTBTutorial-ECVP2013.pdf\n');
 fprintf('in the Psychtoolbox/PsychDocumentation subfolder for an overview of differences\n');
 fprintf('between Psychtoolbox-2 and Psychtoolbox-3 and proper use of basic features. That\n');
 fprintf('folder contains various additional helpful information for use of Psychtoolbox.\n\n');
@@ -703,16 +708,10 @@ fprintf('Please also familiarize yourself with the demos contained in the PsychD
 fprintf('and its subfolders. They show best practices for many common tasks and are generally\n');
 fprintf('well documented.\n');
 fprintf('\n\n');
-fprintf('If you find this software useful then please consider donating some money \n');
-fprintf('to support its ongoing maintenance and development. See: \n');
-fprintf('\n');
-fprintf('http://psychtoolbox.org/donations \n');
-fprintf('\n');
 fprintf('\nEnjoy!\n\n');
 fprintf('Press RETURN or ENTER to confirm you read and understood the above message.\n');
 pause;
 fprintf('\n\n');
-PTBSurvey;
 
 % Clear out everything:
 if IsWin

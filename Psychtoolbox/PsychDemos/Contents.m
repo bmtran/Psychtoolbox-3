@@ -13,7 +13,6 @@
 %    AudioTunnel3DDemo       - Very sketchy demo on how to use OpenAL for 3D spatialized sound.
 %    AudioTunnel3DDemo2      - Another sketchy demo on how to use OpenAL for 3D spatialized sound.
 %    BasicAMAndMixScheduleDemo - Demonstrates basic use of sound schedules, volume controls, amplitude modulation and audio mixing of multiple voices.
-%    BasicSoundFeedbackDemo  - Demonstrates a audio feedback loop via PsychPortAudio(). See DelayedSoundFeedbackDemo for a more research grade approach.
 %    BasicSoundInputDemo     - Demonstrate basic usage of PsychPortAudio() for sound capture.
 %    BasicSoundOutputDemo    - Demonstrate basic usage of PsychPortAudio() for sound playback.
 %    BasicSoundScheduleDemo  - Demonstrate basic usage of sound schedules and buffers with PsychPortAudio().
@@ -88,6 +87,7 @@
 %    ProceduralSquareWaveDemo - Demo for fast drawing of square wave grating.
 %    ProceduralSmoothedApertureSineGratingDemo - Demo for fast drawing of smoothed aperture sine grating.
 %    ProceduralSmoothedDiscsDemo - Demo for fast drawing of smoothed aperture discs.
+%    ProceduralSmoothedDiscMaskDemo - Demo for fast drawing of smoothed aperture disc used as a mask.
 %    PsychRTBoxDemo          - Demonstrates basic use of the RTBox reaction time button response box.
 %    RaspberryPiGPIODemo     - Show basic use of GPIO's on a RaspberryPi running Raspian GNU/Linux.
 %    ReceivingTriggerFromSerialPortDemo - Template for asynchronous trigger collection and timestamping from serial port.

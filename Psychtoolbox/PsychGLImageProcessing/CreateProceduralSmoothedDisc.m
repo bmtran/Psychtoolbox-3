@@ -6,6 +6,7 @@ function [discid, discrect] = CreateProceduralSmoothedDisc(windowPtr, width, hei
 % in a very fast and efficient manner on modern graphics hardware.
 %
 % 'windowPtr' A handle to the onscreen window.
+%
 % 'width' x 'height' The maximum size (in pixels) of the grating. More
 % precise, the size of the mathematical support of the grating. Providing too
 % small values here would 'cut off' peripheral parts or your grating. Too big
@@ -23,7 +24,9 @@ function [discid, discrect] = CreateProceduralSmoothedDisc(windowPtr, width, hei
 %
 % 'useAlpha' whether to use colour (0) or alpha (1) for smoothing channel
 %
-% 'method' whether to use cosine (0) or smoothstep (1) smoothing function
+% 'method' whether to use cosine (0) or smoothstep (1) functions. If you
+%  pass (2) then the smoothstep will be inverted, so you can use it as a
+%  mask (see ProceduralSmoothedDiscMaskDemo.m for example).
 %
 % The function returns a procedural texture handle that you can
 % pass to the Screen('DrawTexture(s)', windowPtr, id, ...) functions
@@ -38,9 +41,6 @@ debuglevel = 1;
 % Global GL struct: Will be initialized in the LoadGLSLProgramFromFiles
 % below:
 global GL;
-
-% Make sure we have support for shaders, abort otherwise:
-AssertGLSL;
 
 if nargin < 3 || isempty(windowPtr) || isempty(width) || isempty(height)
     error('You must provide "windowPtr", "width" and "height"!');
@@ -69,6 +69,12 @@ end
 if nargin < 8 || isempty(method)
     method = 1.0;
 end
+
+% Switch to windowPtr OpenGL context:
+Screen('GetWindowInfo', windowPtr);
+
+% Make sure we have support for shaders, abort otherwise:
+AssertGLSL;
 
 % Load shader with circular aperture and smoothing support:
 discShader = LoadGLSLProgramFromFiles('SmoothedDiscShader', debuglevel);

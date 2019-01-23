@@ -10,18 +10,24 @@ function [T_quantalAbsorptionsNormalized,T_quantalAbsorptions,T_quantalIsomeriza
 % and then renormalize.  (You call EnergyToQuanta because you're converting
 % sensitivities, which go the opposite direction from spectra.)
 %
-% The routine also returns two quantal sensitivity functions.  The first
-% gives the probability that a photon will be absorbed.  The second is the
-% probability that the photon will cause a photopigment isomerization.  It
-% is the latter that is what you want to compute isomerization rates from
-% retinal illuminance. See note at the end of function FillInPhotoreceptors
-% for some information about convention.  In particular, this routine takes
-% pre-retinal absorption into account in its computation of probability of
-% absorptions and isomerizations, so that the relevant retinal illuminance
-% is one computed without accounting for those factors.  This routine does
-% not account for light attenuation due to the pupil, however.  The only
-% use of pupil size here is becuase of its slight effect on lens density as
-% accounted for in the CIE standard.
+% The routine also returns two types of quantal sensitivity functions.  The
+% first gives the probability that a photon will be absorbed.  These are
+% returned in variable T_quantalAbsorptionsNormalized and
+% T_quantalAbsorptions, with the first being normalized. The second is the
+% probability that the photon will cause a photopigment isomerization. This
+% is returned in T_quantalIsomerizations.
+%
+% It is T_quantalIsomerizations that you want to use to compute
+% isomerization rates from retinal illuminance. See note at the end of
+% function FillInPhotoreceptors for some information about conventions.  In
+% particular, this routine takes pre-retinal absorption into account in its
+% computation of probability of absorptions and isomerizations, so that the
+% relevant retinal illuminance is one computed without accounting for those
+% factors.  This routine does not account for light attenuation due to the
+% pupil, however.  The only use of pupil size here is becuase of its slight
+% effect on lens density as accounted for in the CIE standard.  Nor does it
+% account for the collecting area of a photoreceptor, for cones the inner
+% segment diameter.
 %
 % In the passed params structure, you can either pass the lambdaMax values
 % for the photopigment, in which case the absorbance is computed from the
@@ -56,7 +62,7 @@ function [T_quantalAbsorptionsNormalized,T_quantalAbsorptions,T_quantalIsomeriza
 % normalized) referred to the cornea.  FillInPhotoceptors also computes a
 % field isomerizationAbsorptance, which takes the quantal efficiency of
 % isomerizations (probability of an isomerization given an absorption into
-% acount.  This routine does not do that.
+% acount.
 %
 % It would probably be clever to unify the two sets of routines a little
 % more, but we may never get to it.  The routine ComputeCIEConeFundamentals
@@ -80,6 +86,7 @@ function [T_quantalAbsorptionsNormalized,T_quantalAbsorptions,T_quantalIsomeriza
 % 8/10/13  dhb  Expand comments.  Return unscaled quantal efficiencies too.
 % 2/26/16  dhb, ms  Add in Asano et al. (2016) individual observer adjustments
 % 3/30/17  ms   Added output argument returning adjusted ind differences
+% 6/4/18   ms   Included absorbance spectrum into adjusted ind diff output arg
 
 % Handle bad value
 index = find(params.axialDensity <= 0.0001);
@@ -111,7 +118,7 @@ end
 %
 % The logic here is a little hairy, because the way that we used to
 % adjust lens and mac density was additive, but Asano et al. (2016) do
-% it in a multipilcative fashion, so we need a flag to keep track of what
+% it in a multiplicative fashion, so we need a flag to keep track of what
 % we're going to do with the numbers down below.
 if (~isfield(params,'extraLens'))
     params.extraLens = 0;
@@ -178,6 +185,7 @@ if (~isempty(params.indDiffParams.lambdaMaxShift))
     
     absorbance = ShiftPhotopigmentAbsorbance(staticParams.S,absorbance,params.indDiffParams.lambdaMaxShift,params.indDiffParams.shiftType);
 end
+adjIndDiffParams.absorbance = absorbance;
 
 % Compute absorptance
 %
@@ -219,6 +227,7 @@ elseif (size(absorbance,1) == 1 && params.DORODS)
 else
     error('Unexpected number of photopigment lambda max values passed');
 end
+adjIndDiffParams.absorptance = absorptance;
 
 %% Put together pre-receptor and receptor parts
 for i = 1:size(absorptance,1)

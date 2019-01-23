@@ -82,6 +82,7 @@ NVSTUSB_INVERT_EYES_PROC Nvstusb_invert_eyes_proc = NULL;
 static void* nvstusb_plugin = NULL;
 static struct nvstusb_context* nvstusb_goggles = NULL;
 #endif
+static double nvsttriggerdelay = 0;
 
 #if PSYCH_SYSTEM != PSYCH_WINDOWS
 #include "ptbstartlogo.h"
@@ -273,7 +274,7 @@ void PsychRebindARBExtensionsToCore(void)
         Contains experimental support for flipping multiple displays synchronously, e.g., for dual display stereo setups.
 
 */
-psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType **windowRecord, int numBuffers, int stereomode, double* rect, int multiSample, PsychWindowRecordType* sharedContextWindow, int specialFlags)
+psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, PsychWindowRecordType **windowRecord, int numBuffers, int stereomode, double* rect, int multiSample, PsychWindowRecordType* sharedContextWindow, psych_int64 specialFlags)
 {
     PsychRectType dummyrect;
     double splashMinDurationSecs = 0;
@@ -534,12 +535,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
                 !PsychGetGPUSpecs(screenSettings->screenNumber, &gpuMaintype, &gpuMinortype, NULL, NULL) ||
                 (gpuMaintype != kPsychRadeon) || (gpuMinortype > 0xffff) || (PsychGetScreenDepthValue(screenSettings->screenNumber) != 24)) {
                 printf("\nPTB-ERROR: Your script requested a %i bpp, %i bpc framebuffer, but i can't provide this for you, because\n", (*windowRecord)->depth, (*windowRecord)->depth / 3);
-                if (!PsychOSIsKernelDriverAvailable(screenSettings->screenNumber)) {
-                    printf("PTB-ERROR: Linux low-level MMIO access by Psychtoolbox is disabled or not permitted on your system in this session.\n");
-                    printf("PTB-ERROR: On Linux you must either configure your system by executing the script 'PsychLinuxConfiguration' once,\n");
-                    printf("PTB-ERROR: or start Octave or Matlab as root, ie. system administrator or via sudo command for this to work.\n\n");
-                }
-                else if ((gpuMaintype != kPsychRadeon) || (gpuMinortype > 0xffff)) {
+                if ((gpuMaintype != kPsychRadeon) || (gpuMinortype > 0xffff)) {
                     printf("PTB-ERROR: this functionality is not supported on your model of graphics card. Only AMD/ATI GPU's of the\n");
                     printf("PTB-ERROR: Radeon X1000 series, and Radeon HD-2000 series and later models, and corresponding FireGL/FirePro\n");
                     printf("PTB-ERROR: cards are supported. This covers basically all AMD graphics cards since about the year 2007.\n");
@@ -547,6 +543,11 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
                     printf("PTB-ERROR: for 10 bpc framebuffer support by specifying a 'DefaultDepth' setting of 30 bit in the xorg.conf file.\n");
                     printf("PTB-ERROR: The latest Intel graphics cards may be able to achieve 10 bpc with 'DefaultDepth' 30 setting if your\n");
                     printf("PTB-ERROR: graphics driver is recent enough, however this hasn't been actively tested on Intel cards so far.\n\n");
+                }
+                else if (!PsychOSIsKernelDriverAvailable(screenSettings->screenNumber)) {
+                    printf("PTB-ERROR: Linux low-level MMIO access by Psychtoolbox is disabled or not permitted on your system in this session.\n");
+                    printf("PTB-ERROR: On Linux you must either configure your system by executing the script 'PsychLinuxConfiguration' once,\n");
+                    printf("PTB-ERROR: or start Octave or Matlab as root, ie. system administrator or via sudo command for this to work.\n\n");
                 }
                 else if (PsychGetScreenDepthValue(screenSettings->screenNumber) != 24) {
                     printf("PTB-ERROR: your display is not set to 24 bit 'DefaultDepth' color depth, but to %i bit color depth in xorg.conf.\n\n",
@@ -639,7 +640,7 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
             if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: Floating point precision framebuffer enabled.\n");
         }
         else {
-            if (PsychPrefStateGet_Verbosity() > 2) printf("PTB-INFO: Fixed point precision integer framebuffer enabled.\n");
+            if (PsychPrefStateGet_Verbosity() > 3) printf("PTB-INFO: Fixed point precision integer framebuffer enabled.\n");
         }
 
         // Query and show bpc for all channels:
@@ -1698,15 +1699,6 @@ psych_bool PsychOpenOnscreenWindow(PsychScreenSettingsType *screenSettings, Psyc
             }
             sync_disaster = true;
         }
-
-        // Another check for proper VBL syncing: We only accept monitor refresh intervals between 20 Hz and 250 Hz.
-        // Lower- / higher values probably indicate sync-trouble...
-        if (ifi_estimate < 0.004 || ifi_estimate > 0.050) {
-            if (PsychPrefStateGet_Verbosity() > 1) {
-                printf("\nWARNING: Measured monitor refresh interval indicates a display refresh of less than 20 Hz or more than 250 Hz?!?\nThis indicates massive problems with VBL sync.\n");
-            }
-            sync_disaster = true;
-        }
     } // End of synctests part II.
 
     // This is a "last resort" fallback: If user requests to *skip* all sync-tests and calibration routines
@@ -2166,6 +2158,10 @@ void PsychSetupShutterGoggles(PsychWindowRecordType *windowRecord, psych_bool do
                 Nvstusb_get_keys_proc = dlsym(nvstusb_plugin, "nvstusb_get_keys");
                 Nvstusb_invert_eyes_proc = dlsym(nvstusb_plugin, "nvstusb_invert_eyes");
 
+                nvsttriggerdelay = 0;
+                if (getenv("PTB_NVISION3D_DELAY"))
+                    nvsttriggerdelay = atof(getenv("PTB_NVISION3D_DELAY"));
+
                 // Successfully linked?
                 if (!Nvstusb_init_proc || !Nvstusb_deinit_proc || !Nvstusb_set_rate_proc || !Nvstusb_swap_proc || !Nvstusb_get_keys_proc || !Nvstusb_invert_eyes_proc) {
                     if (PsychPrefStateGet_Verbosity() > 2)
@@ -2269,15 +2265,30 @@ void PsychSetupShutterGoggles(PsychWindowRecordType *windowRecord, psych_bool do
 void PsychTriggerShutterGoggles(PsychWindowRecordType *windowRecord, int viewid)
 {
     static int oldviewid = -1;
+    double dT;
+
+    // Delay trigger emission if requested:
+    if (nvsttriggerdelay > 0) {
+        PsychWaitUntilSeconds(windowRecord->time_at_last_vbl + nvsttriggerdelay);
+        // Delayed triggering only makes sense if we want to trigger for the other
+        // eye - the one that will present at next refresh, not the one that is
+        // currently presenting. Therefore switch left-right eye trigger:
+        viewid = 1 - viewid;
+    }
+
+    PsychGetAdjustedPrecisionTimerSeconds(&dT);
+    dT = 1000 * (dT - windowRecord->time_at_last_vbl);
 
     #ifdef PTB_USE_NVSTUSB
         // Emit shutter trigger if frameSeqStereoActive and NVideo NVision driver active:
         if (nvstusb_plugin && nvstusb_goggles && (windowRecord->stereomode == kPsychFrameSequentialStereo)) {
             Nvstusb_swap_proc(nvstusb_goggles, ((viewid == 0) ? nvstusb_left : nvstusb_right), NULL);
-            if (PsychPrefStateGet_Verbosity() > 9) printf("PTB-DEBUG: PsychTriggerShutterGoggles: Triggering for viewid %i.\n", viewid);
+            if ((PsychPrefStateGet_Verbosity() > 9) || (nvsttriggerdelay < 0))
+                printf("PTB-DEBUG: PsychTriggerShutterGoggles: Triggering for viewid %i, dT since vblank in msecs: %f\n", viewid, dT);
         }
         else {
-            if (PsychPrefStateGet_Verbosity() > 10) printf("PTB-DEBUG: PsychTriggerShutterGoggles: No-Op call for viewid %i.\n", viewid);
+            if ((PsychPrefStateGet_Verbosity() > 9) || (nvsttriggerdelay < 0))
+                printf("PTB-DEBUG: PsychTriggerShutterGoggles: No-Op call for viewid %i, dT since vblank in msecs: %f\n", viewid, dT);
         }
     #endif
 
@@ -3517,6 +3528,11 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
     // Don't use absolute vbl or (divisor,remainder) constraint by default:
     targetSwapFlags = 0;
 
+    // Request flip at exactly tWhen if fine-grained onset scheduling is requested for this window,
+    // subject to the required hardware + OS support:
+    if (windowRecord->specialflags & kPsychUseFineGrainedOnset)
+        targetSwapFlags |= 4;
+
     // Swap at a specific video field (even or odd) requested, e.g., to select the target field
     // in a frame-sequential stereo presentations setup and thereby the specific eye for stimulus
     // onset?
@@ -3732,7 +3748,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         // for Prime-Synced outputSrc -> outputSink setups, as that would add 1 frame extra lag. by preventing
         // us from subitting a swaprequest 1 frame ahead to compensate for the 1 frame lag of Prime sync.
         if ((windowRecord->time_at_last_vbl > 0) && (vbl_synclevel!=2) && (!osspecific_asyncflip_scheduled) && (windowRecord->hybridGraphics < 2) &&
-            !(windowRecord->specialflags & kPsychSkipWaitForFlipOnce) &&
+            !(windowRecord->specialflags & kPsychSkipWaitForFlipOnce) && !(PsychPrefStateGet_ConserveVRAM() & kPsychSkipOutOfVblankWait) &&
             ((time_at_swaprequest - windowRecord->time_at_last_vbl < 0.002) || ((line_pre_swaprequest < min_line_allowed) && (line_pre_swaprequest > 0)))) {
             // Less than 2 msecs passed since last bufferswap, although swap in sync with retrace requested.
             // Some drivers seem to have a bug where a bufferswap happens anywhere in the VBL period, even
@@ -4362,7 +4378,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
             // Consistency check: Swap can't complete before it was scheduled: Have a fudge
             // value of 1 msec to account for roundoff errors:
             if ((PsychPrefStateGet_SkipSyncTests() < 2) && !(windowRecord->specialflags & kPsychSkipWaitForFlipOnce) &&
-		((osspecific_asyncflip_scheduled && (tSwapComplete < tprescheduleswap - 0.001)) ||
+                ((osspecific_asyncflip_scheduled && (tSwapComplete < tprescheduleswap - 0.001)) ||
                 (!osspecific_asyncflip_scheduled && (tSwapComplete < time_at_swaprequest - 0.001)))) {
                 if (verbosity > 0) {
                     printf("PTB-ERROR: OpenML timestamping reports that flip completed before it was scheduled [Scheduled no earlier than %f secs, completed at %f secs]!\n",
@@ -4427,8 +4443,9 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         // Store optional VBL-IRQ timestamp as well:
         windowRecord->postflip_vbltimestamp = postflip_vbltimestamp;
 
-        // Store optional OS-Builtin swap timestamp as well:
-        windowRecord->osbuiltin_swaptime = tSwapComplete;
+        // Store OS-Builtin swap timestamp as well, or stimulus onset time from beampos
+        // timestamping, if OS-Builtin timestamp not available:
+        windowRecord->osbuiltin_swaptime = (tSwapComplete > 0) ? tSwapComplete : *time_at_onset;
     }
     else {
         // syncing to vbl is disabled, time_at_vbl becomes meaningless, so we set it to a
@@ -4438,7 +4455,7 @@ double PsychFlipWindowBuffers(PsychWindowRecordType *windowRecord, int multiflip
         *miss_estimate = 0;
         *beamPosAtFlip = -1;  // Ditto for beam position...
 
-        // Was internal timstamping suppressed?
+        // Was internal timestamping suppressed?
         if (windowRecord->specialflags & kPsychSkipTimestampingForFlipOnce) {
             // Latch potential values injected via Screen Hookfunction 'SetOneshotFlipResults':
             time_at_vbl = windowRecord->time_at_last_vbl;
@@ -4792,7 +4809,9 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
                 // in this case tdur will be >> 1 monitor refresh for next iteration. Both samples
                 // will be rejected, so they don't skew the estimate.
                 // But if tdur < 0.004 for multiple consecutive frames, this indicates that
-                // synchronization fails completely and we are just "falling through" glFinish().
+                // synchronization fails completely and we are just "falling through" glFinish(),
+                // unless we are running on a ultra-high video refresh rate display with > 250 Hz refresh,
+                // then all bets are off and we skip this check at the moment.
                 // A fallthroughcount>=10 will therefore abort the measurment-loop and invalidate
                 // the whole result - indicating VBL sync trouble...
                 // We need this additional check, because without it, we could get 1 valid sample with
@@ -4800,7 +4819,7 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
                 // The 10 ms value is a valid value corresponding to 100 Hz refresh and by coincidence its
                 // the "standard-timeslicing quantum" of the MacOS-X scheduler... ...Wonderful world of
                 // operating system design and unintended side-effects for poor psychologists... ;-)
-                fallthroughcount = (tdur < 0.004) ? fallthroughcount+1 : 0;
+                fallthroughcount = ((tdur < 0.004) && (intervalHint > 0.004 || intervalHint <= 0)) ? fallthroughcount+1 : 0;
 
                 // Shorten our measured time sample by the delay introduced by a potentially running
                 // and interfering compositor, so we discount that confound. Needed, e.g., for Windows DWM
@@ -4809,14 +4828,11 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
 
                 // We accept the measurement as valid if either no intervalHint is available as reference or
                 // we are in an interval between +/-20% of the hint.
-                // We also check if interval corresponds to a measured refresh between 20 Hz and 250 Hz. Other
-                // values are considered impossible and are therefore rejected...
                 // If we are in OpenGL native stereo display mode, aka temporally interleaved flip-frame stereo,
                 // then we also accept samples that are in a +/-20% rnage around twice the intervalHint. This is,
                 // because in OpenGL stereo mode, some hardware doubles the flip-interval: It only flips every 2nd
                 // video refresh, so a doubled flip interval is a legal valid result.
-                if ((tdur >= 0.004 && tdur <= 0.050) &&
-                    ((intervalHint<=0) || (intervalHint>0 &&
+                if (((intervalHint<=0) || (intervalHint>0 &&
                     (((tdur > 0.8 * intervalHint) && (tdur < 1.2 * intervalHint)) ||
                     (((windowRecord->stereomode==kPsychOpenGLStereo) || (windowRecord->multiSample > 0) || windowRecord->hybridGraphics) &&
                      (tdur > 0.8 * 2 * intervalHint) && (tdur < 1.2 * 2 * intervalHint))
@@ -4830,48 +4846,28 @@ double PsychGetMonitorRefreshInterval(PsychWindowRecordType *windowRecord, int* 
                     tavgsq = tavgsq + (tdur * tdur);
                     n=windowRecord->nrIFISamples;
                     tstddev = (n>1) ? sqrt( ( tavgsq - ( tavg * tavg / n ) ) / (n-1) ) : 10000.0f;
-
-                    // Update reference timestamp:
-                    told = tnew;
-
-                    // Pause for 2 msecs after a valid sample was taken. This to guarantee we're out
-                    // of the VBL period of the successfull swap.
-                    PsychWaitIntervalSeconds(0.002);
-                }
-                else {
-                    // Rejected sample: Better invalidate told as well:
-                    //told = -1;
-                    // MK: Ok, i have no clue why above told = -1 is wrong, but doing it makes OS/X 10.4.10 much
-                    // more prone to sync failures, whereas not doing it makes it more reliable. Doesn't make
-                    // sense, but we are better off reverting to the old strategy...
-                    // Update: I think i know why. Some (buggy!) drivers, e.g., the ATI Radeon X1600 driver on
-                    // OS/X 10.4.10, do not limit the number of bufferswaps to 1 per refresh cycle as mandated
-                    // by the spec, but they allow as many bufferswaps as you want, as long as all of them happen
-                    // inside the VBL period! Basically the swap-trigger seems to be level-triggered instead of
-                    // edge-triggered. This leads to a ratio of 2 invalid samples followed by 1 valid sample.
-                    // If we'd reset our told at each invalid sample, we would need over 3 times the amount of
-                    // samples for a useable calibration --> No go. Now we wait for 2 msecs after each successfull
-                    // sample (see above), so the VBL period will be over before we manage to try to swap again.
-
-                    // Reinitialize told to tnew, otherwise errors can accumulate:
-                    told = tnew;
-
-                    // Pause for 2 msecs after a valid sample was taken. This to guarantee we're out
-                    // of the VBL period of the successfull swap.
-                    PsychWaitIntervalSeconds(0.002);
                 }
 
                 // Store current sample in samplebuffer if requested:
                 if (samples && i < maxlogsamples) samples[i] = tdur;
             }
-            else {
-                // (Re-)initialize reference timestamp:
-                told = tnew;
 
-                // Pause for 2 msecs after a first sample was taken. This to guarantee we're out
-                // of the VBL period of the successfull swap.
-                PsychWaitIntervalSeconds(0.002);
-            }
+            // Update reference timestamp:
+            told = tnew;
+            
+            // Some (buggy!) drivers, e.g., the ATI Radeon X1600 driver on
+            // OS/X 10.4.10, do not limit the number of bufferswaps to 1 per refresh cycle as mandated
+            // by the spec, but they allow as many bufferswaps as you want, as long as all of them happen
+            // inside the VBL period! Basically the swap-trigger seems to be level-triggered instead of
+            // edge-triggered. This leads to a ratio of 2 invalid samples followed by 1 valid sample.
+            // If we'd reset our told at each invalid sample, we would need over 3 times the amount of
+            // samples for a useable calibration --> No go. Now we wait for 1 msecs after each sample,
+            // so the VBL period will be over before we manage to try to swap again.
+            //
+            // Pause for 1 msec after a sample was taken. This to guarantee we're out
+            // of the VBL period of the successfull swap. Skip for ultra-high refresh rate displays:
+            if (intervalHint > 0.004 || intervalHint <= 0)
+                PsychWaitIntervalSeconds(0.001);
         } // Next measurement loop iteration...
 
         // Switch back to old scheduling after timing tests:
@@ -5980,6 +5976,16 @@ void PsychSetDrawingTarget(PsychWindowRecordType *windowRecord)
                 if (glBindFramebufferEXT) glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
             }
 
+            // Safeguard us against being called with windowRecord unsuitable as drawing target, e.g., kPsychProxyWindow type:
+            if (windowRecord && !(PsychIsOnscreenWindow(windowRecord) || PsychIsOffscreenWindow(windowRecord))) {
+                if (PsychPrefStateGet_Verbosity() > 1)
+                    printf("PTB-WARNING: PsychSetDrawingTarget() called with non-drawingtarget windowRecord[%i:%p], type %i! No-Op.\n",
+                           windowRecord->windowIndex, windowRecord, windowRecord->windowType);
+
+                recursionLevel--;
+                return;
+            }
+
             // Special safe-guards for setting a new drawingtarget during active async flip operations needed?
             if (windowRecord && (asyncFlipOpsActive > 0)) {
                 // Yes. At least one async flip in progress and want to bind windowRecord.
@@ -6579,11 +6585,25 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
     psych_bool vc4 = FALSE;
     GLint maxtexsize=0, maxcolattachments=0, maxaluinst=0;
     GLboolean nativeStereo = FALSE;
+    int mesaversion[3];
+    const char* mesaver = NULL;
 
     gpuMaintype = kPsychUnknown;
     gpuModel = 0xFFFFFFFF;
     gpuMinortype = 0;
     PsychGetGPUSpecs(windowRecord->screenNumber, &gpuMaintype, &gpuMinortype, &gpuModel, NULL);
+
+    // Try to detect if we are running on top of Mesa OpenGL, and which version:
+    mesaver = strstr((const char*) glGetString(GL_VERSION), "Mesa");
+    if (mesaver && (3 == sscanf(mesaver, "Mesa %i.%i.%i", &mesaversion[0], &mesaversion[1], &mesaversion[2]))) {
+        if (verbose)
+            printf("PTB-DEBUG: Running on Mesa version %i.%i.%i\n", mesaversion[0], mesaversion[1], mesaversion[2]);
+    }
+    else {
+        mesaversion[0] = mesaversion[1] = mesaversion[2] = 0;
+        if (verbose)
+            printf("PTB-DEBUG: Not running on Mesa graphics library.\n");
+    }
 
     // Init Id string for GPU core to zero. This has at most 8 Bytes, including 0-terminator,
     // so use at most 7 letters!
@@ -6629,7 +6649,7 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
 
         // Prime renderoffload only works with proper timing and quality if DRI3/Present
         // is used for our onscreen window:
-        if (!(windowRecord->specialflags & kPsychIsDRI3Window) && (PsychPrefStateGet_Verbosity() > 1)) {
+        if ((windowRecord->specialflags & kPsychIsX11Window) && !(windowRecord->specialflags & kPsychIsDRI3Window) && (PsychPrefStateGet_Verbosity() > 1)) {
             printf("PTB-WARNING: Hybrid graphics DRI PRIME muxless render offload requires the use of DRI3/Present for rendering,\n");
             printf("PTB-WARNING: but this is not enabled on your setup. Use XOrgConfCreator to setup your system accordingly.\n");
             printf("PTB-WARNING: Without this, your visual stimulation will suffer severe timing and display artifacts.\n\n");
@@ -7011,6 +7031,28 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
                     windowRecord->gfxcaps |= kPsychGfxCapFPFilter16;
                     windowRecord->gfxcaps |= kPsychGfxCapFPFilter32;
                 }
+
+                // Running on Linux + Mesa OpenGL driving an AMD R600 gpu or later, and thereby possibly a
+                // AMD GCN gpu controlled by the Mesa Gallium radeonsi gfx-driver? If so then we need a workaround
+                // for a radeonsi bug present in Mesa versions 18.1, 18.2, and early versions of Mesa 18.3.x.
+                // The bug is fixed upstream for Mesa 19+ and for Mesa 18.3.2+, so the workaround is used for
+                // Mesa 18.1.0 - Mesa 18.3.1.
+                //
+                // The bug is that 1 component 1D or 2 component 2D vertex attributes submitted via VBO's or VAO's,
+                // e.g., via glTexCoordPointer() or similar will not get transmitted to GLSL vertex shaders properly
+                // iff user data type GL_DOUBLE is used. E.g., glTexCoordPointer(1, GL_DOUBLE, ...) will result in
+                // reception of corrupted gl_MultiTexCoordX.x values. This can be avoided by using GL_FLOAT as input
+                // data type, e.g., glTexCoordPointer(1, GL_FLOAT, ...) or using the experimental NIR shader backend
+                // (setenv R600_DEBUG=nir). Set the specialflags flag kPsychNeedVBODouble12Workaround to signal this
+                // bug. Atm. only Screen('DrawDots') needs to work around the bug if smooth/round point rendering or
+                // shader based rendering is requested (dot_type > 0) and different point sizes are used for individual
+                // dots.
+                if ((PSYCH_SYSTEM == PSYCH_LINUX) && strstr(windowRecord->gpuCoreId, "R600") &&
+                    (mesaversion[0] == 18) && (mesaversion[1] > 0) && ((mesaversion[1] < 3) || (mesaversion[2] < 2))) {
+                    if (verbose)
+                        printf("Potential AMD GCN gpu on Linux with potentially buggy Mesa Gallium radeonsi driver. Enabling 'DrawDots' workaround.\n");
+                    windowRecord->specialflags |= kPsychNeedVBODouble12Workaround;
+                }
             }
         }
 
@@ -7077,6 +7119,22 @@ void PsychDetectAndAssignGfxCapabilities(PsychWindowRecordType *windowRecord)
         (strstr((char*) glGetString(GL_VENDOR), "ATI") && strstr((char*) glGetString(GL_VERSION), "Compatibility Profile") && !strncmp((char*) glGetString(GL_VERSION), "4.", 2))) {
         if (verbose) printf("Assuming hardware supports native OpenGL primitive smoothing (points, lines).\n");
         windowRecord->gfxcaps |= kPsychGfxCapSmoothPrimitives;
+    }
+
+    {
+        // Check the rounding behavior if floating point color values are written to a
+        // fixed point integer framebuffer - truncate or round to nearest integer?
+        GLubyte testpixel;
+
+        glClearColor(0.5, 0.5, 0.5, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glReadPixels(0, 0, 1, 1, GL_RED, GL_UNSIGNED_BYTE, (GLvoid*) &testpixel);
+        if (testpixel == 128)
+            windowRecord->gfxcaps |= kPsychGfxCapFloatToIntRound;
+
+        if (verbose)
+            printf("Float color value 0.5 -> fixed point reads back as %i ==> %s.\n",
+                   (int) testpixel, (windowRecord->gfxcaps & kPsychGfxCapFloatToIntRound) ? "Rounds" : "Truncates");
     }
 
     // Allow usercode to override our pessimistic view of vertex color precision:
